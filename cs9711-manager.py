@@ -9,6 +9,7 @@ driver maintenance. Uses GTK4 + libadwaita for native GNOME look.
 import gi
 import glob
 import logging
+import shutil
 import os
 import re
 import shlex
@@ -28,7 +29,7 @@ APP_AUTHOR = "Mahmud Farooque"
 APP_AUTHOR_EMAIL = "farooque7@gmail.com"
 AUTHOR_URL = "https://github.com/mmhfarooque"
 PROJECT_URL = "https://github.com/mmhfarooque/chipsailing-cs9711-fingerprint-linux"
-USB_ID = "2541:0236"
+USB_IDS = {"2541:0236", "2541:9711"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DRIVER_DIR = os.path.join(SCRIPT_DIR, "libfprint-CS9711")
 CS9711_SRC = os.path.join(DRIVER_DIR, "libfprint", "drivers", "cs9711", "cs9711.c")
@@ -119,6 +120,7 @@ SERVICE_PAM_FILES = {
         "login",                 # TTY login, and COSMIC's greetd service = login
     ],
     "Lock screen": [
+        "omarchy-lock-fingerprint",  # Omarchy Shell dedicated fingerprint flow
         "kde-fingerprint",       # KDE Plasma 6 — dedicated fingerprint stack (native)
         "kscreenlocker",         # KDE Plasma 6
         "kscreenlocker_greet",   # KDE Plasma 6 (alt)
@@ -277,15 +279,13 @@ def run_cmd(cmd, timeout=10):
 def is_scanner_connected():
     # sysfs first: Arch and other minimal installs have no usbutils, so lsusb
     # is absent and its failure looked exactly like an unplugged scanner.
-    vendor, product = USB_ID.split(":")
     try:
         for path in glob.glob("/sys/bus/usb/devices/*/idVendor"):
             try:
                 with open(path) as fh:
-                    if fh.read().strip() != vendor:
-                        continue
+                    vendor = fh.read().strip().lower()
                 with open(path.replace("idVendor", "idProduct")) as fh:
-                    if fh.read().strip() == product:
+                    if f"{vendor}:{fh.read().strip().lower()}" in USB_IDS:
                         log.debug("Scanner connected: True (sysfs)")
                         return True
             except OSError:
@@ -293,7 +293,7 @@ def is_scanner_connected():
     except Exception as exc:  # never let detection crash the GUI
         log.debug(f"sysfs scan failed: {exc}")
     rc, out, _ = run_cmd(["lsusb"])
-    connected = USB_ID in out if rc == 0 else False
+    connected = any(usb_id in out.lower() for usb_id in USB_IDS) if rc == 0 else False
     log.debug(f"Scanner connected: {connected} (lsusb fallback)")
     return connected
 
@@ -456,6 +456,9 @@ def get_pam_auth_locations():
 
     locations = {}
     for name, files in SERVICE_PAM_FILES.items():
+        if name == "Lock screen" and _is_omarchy_lock():
+            locations[name] = _has_fprintd_in_stack("omarchy-lock-fingerprint")
+            continue
         enabled = False
         any_file_present = False
         for f in files:
@@ -477,6 +480,49 @@ def run_as_root(cmd_str):
     return run_cmd(["pkexec", "bash", "-c", cmd_str], timeout=60)
 
 
+def _is_omarchy_lock():
+    """Omarchy Shell uses its own password and fingerprint PAM services."""
+    return (os.path.exists(_pam_path("omarchy-lock-password"))
+            or shutil.which("omarchy-shell") is not None)
+
+
+def _omarchy_lock_cmd(enable, max_tries, timeout):
+    # Remove the whole managed service on disable: the shell checks file
+    # existence, so leaving an empty PAM stack would still arm authentication.
+    return f'''set -eu
+FILE={PAM_DIR}/omarchy-lock-fingerprint
+MARK="{PAM_MARK}"
+if [ -e "$FILE" ] && ! grep -qF "$MARK" "$FILE"; then
+  # Adopt only the standard fingerprint-only stack. Preserve custom PAM
+  # modules/control flags rather than silently changing their security policy.
+  if ! awk '
+    /^[[:space:]]*(#|$)/ {{ next }}
+    $1=="auth" && $2=="required" && $3=="pam_fprintd.so" {{
+      for (i=4; i<=NF; i++)
+        if ($i !~ /^(max-tries|timeout)=[0-9]+$/) bad=1
+      auth++; next
+    }}
+    $1=="account" && $2=="include" && $3=="system-local-login" && NF==3 {{ account++; next }}
+    {{ bad=1 }}
+    END {{ exit (bad || auth!=1 || account!=1) }}' "$FILE"; then
+    echo "Custom Omarchy fingerprint PAM detected; refusing to change it." >&2
+    exit 1
+  fi
+  if [ ! -e "$FILE.cs9711-backup" ]; then
+    cp -p "$FILE" "$FILE.cs9711-backup"
+  fi
+fi
+if [ "{int(bool(enable))}" = 1 ]; then
+  umask 022
+  printf '%s\\n' '#%PAM-1.0' "$MARK" \\
+    'auth required pam_fprintd.so max-tries={int(max_tries)} timeout={int(timeout)}' \\
+    'account include system-local-login' > "$FILE"
+  chmod 644 "$FILE"
+else
+  rm -f "$FILE"
+fi'''
+
+
 def pam_toggle_cmd(location, enable, max_tries=7, timeout=30):
     """Build a root bash script that enables/disables fingerprint for one auth
     location by managing that service's own PAM file — independently of the others.
@@ -491,6 +537,8 @@ def pam_toggle_cmd(location, enable, max_tries=7, timeout=30):
     The full vendor stack (incl. the password path) is always preserved, and the
     fprintd line is only ever 'sufficient', so password auth never breaks.
     """
+    if location == "Lock screen" and _is_omarchy_lock():
+        return _omarchy_lock_cmd(enable, max_tries, timeout)
     services = SERVICE_PAM_FILES.get(location, [])
     svc_list = " ".join(s for s in services if re.match(r"^[A-Za-z0-9._-]+$", s))
     fp_opts = f"max-tries={int(max_tries)} timeout={int(timeout)}"
