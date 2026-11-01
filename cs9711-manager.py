@@ -29,7 +29,7 @@ APP_AUTHOR = "Mahmud Farooque"
 APP_AUTHOR_EMAIL = "farooque7@gmail.com"
 AUTHOR_URL = "https://github.com/mmhfarooque"
 PROJECT_URL = "https://github.com/mmhfarooque/chipsailing-cs9711-fingerprint-linux"
-USB_ID = "2541:0236"
+USB_IDS = {"2541:0236", "2541:9711"}
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DRIVER_DIR = os.path.join(SCRIPT_DIR, "libfprint-CS9711")
 CS9711_SRC = os.path.join(DRIVER_DIR, "libfprint", "drivers", "cs9711", "cs9711.c")
@@ -259,15 +259,13 @@ def run_cmd(cmd, timeout=10):
 def is_scanner_connected():
     # sysfs first: Arch and other minimal installs have no usbutils, so lsusb
     # is absent and its failure looked exactly like an unplugged scanner.
-    vendor, product = USB_ID.split(":")
     try:
         for path in glob.glob("/sys/bus/usb/devices/*/idVendor"):
             try:
                 with open(path) as fh:
-                    if fh.read().strip() != vendor:
-                        continue
+                    vendor = fh.read().strip().lower()
                 with open(path.replace("idVendor", "idProduct")) as fh:
-                    if fh.read().strip() == product:
+                    if f"{vendor}:{fh.read().strip().lower()}" in USB_IDS:
                         log.debug("Scanner connected: True (sysfs)")
                         return True
             except OSError:
@@ -275,7 +273,7 @@ def is_scanner_connected():
     except Exception as exc:  # never let detection crash the GUI
         log.debug(f"sysfs scan failed: {exc}")
     rc, out, _ = run_cmd(["lsusb"])
-    connected = USB_ID in out if rc == 0 else False
+    connected = any(usb_id in out.lower() for usb_id in USB_IDS) if rc == 0 else False
     log.debug(f"Scanner connected: {connected} (lsusb fallback)")
     return connected
 
