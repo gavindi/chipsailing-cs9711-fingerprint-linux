@@ -197,6 +197,10 @@ This project patches `CS9711_DEFAULT_RESET_SLEEP` from `250` to `1500` (millisec
 
 The patch is in `patches/cs9711-retry-delay-1500ms.patch`.
 
+## Scan Cancellation Fix (from upstream testing)
+
+`patches/cs9711-scan-cancel-cleanup.patch` is upstream commit [`256ad3d`](https://github.com/archeYR/libfprint-CS9711/commit/256ad3d70d13e4d6949f09e5018602b352d8f82f) ("Fix CS9711 scan cancellation cleanup"), which so far exists only on the driver's `cs9711-rebase-testing` branch. Cancelling a scan used to surface as a read failure; with the fix the scan state machine completes cleanly, deactivation waits for a running scan, and the post-scan command is only sent when a scan actually started. Every build path (`install.sh`, `reinstall.sh`, the .deb, Arch and RPM packages) applies it on top of the default `cs9711-rebase` branch, after the retry-delay patch, via `helpers/scan-cancel-patch.sh`. It is non-fatal — if a future upstream change stops it applying, the build continues without it and prints a warning — and it becomes a no-op automatically once upstream merges the fix into `cs9711-rebase`.
+
 ## PAM Configuration
 
 Since v2.0.2, fingerprint is wired **per service**, not globally: each auth location (login screen, lock screen, `sudo`, polkit) gets the `pam_fprintd` line in its **own** PAM service file, tagged `# cs9711-managed`, and the GUI's four switches control them independently. Nothing is ever written to the shared `common-auth`/`system-auth` stack — which also means the tool works the same on **Arch/CachyOS**, where `/etc/pam.d/common-auth` does not exist at all (v2.1.0 fixed “Apply PAM Settings” accordingly, issue #1).
@@ -265,8 +269,10 @@ KWallet has the same problem in reverse: it is opened by a PAM module that captu
 ├── setup-gui.sh                 # GUI dependency installer + desktop shortcut
 ├── cs9711-manager.desktop       # Desktop entry template
 ├── patches/
-│   └── cs9711-retry-delay-1500ms.patch
+│   ├── cs9711-retry-delay-1500ms.patch
+│   └── cs9711-scan-cancel-cleanup.patch   # upstream 256ad3d (testing branch)
 ├── helpers/
+│   ├── scan-cancel-patch.sh     # Applies the scan-cancellation patch (all build paths)
 │   └── set-empty-keyring-password.py
 ├── packaging/
 │   ├── deb/

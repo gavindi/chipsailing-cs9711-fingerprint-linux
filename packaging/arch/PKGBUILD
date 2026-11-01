@@ -28,6 +28,17 @@ prepare() {
     # Apply 1500ms retry delay patch
     sed -i 's/#define CS9711_DEFAULT_RESET_SLEEP.*/#define CS9711_DEFAULT_RESET_SLEEP  1500/' \
         libfprint/drivers/cs9711/cs9711.c
+    # Scan-cancellation fix from upstream's testing branch (256ad3d) — inline
+    # copy of helpers/scan-cancel-patch.sh. Read from the repo checkout this
+    # PKGBUILD lives in; non-fatal, and a no-op once upstream merges it.
+    local scan_patch="$startdir/../../patches/cs9711-scan-cancel-cleanup.patch"
+    if grep -q 'cs9711_scan_error_action' libfprint/drivers/cs9711/cs9711.c; then
+        :
+    elif [ -f "$scan_patch" ] && git apply --check "$scan_patch" 2>/dev/null; then
+        git apply "$scan_patch"
+    else
+        echo "WARNING: scan-cancellation fix (upstream 256ad3d) not applied — building without it"
+    fi
     # Make doctest optional (only needed for tests)
     sed -i "s/dependency('doctest', required: true)/dependency('doctest', required: false)/" \
         libfprint/sigfm/meson.build

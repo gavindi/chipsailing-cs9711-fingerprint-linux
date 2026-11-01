@@ -439,6 +439,18 @@ else
     exit 1
 fi
 
+# Scan-cancellation fix from upstream's testing branch (256ad3d) — non-fatal
+source "$SCRIPT_DIR/helpers/scan-cancel-patch.sh"
+if apply_scan_cancel_patch "$DRIVER_DIR" "$SCRIPT_DIR/patches/cs9711-scan-cancel-cleanup.patch"; then
+    if [ "$SCAN_CANCEL_STATUS" = applied ]; then
+        ok "Applied scan-cancellation fix (upstream 256ad3d)"
+    else
+        ok "Scan-cancellation fix already present"
+    fi
+else
+    warn "Scan-cancellation fix (upstream 256ad3d) no longer applies — building without it"
+fi
+
 # Make doctest optional (only needed for tests, not the driver itself)
 SIGFM_MESON="$DRIVER_DIR/libfprint/sigfm/meson.build"
 if [ -f "$SIGFM_MESON" ] && grep -q "required: true" "$SIGFM_MESON"; then

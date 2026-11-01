@@ -72,7 +72,13 @@ grep -q "if doctest.found()" "$SIGFM" || { sed -i "/^sigfm_tests/i if doctest.fo
 # OpenCV version-resilient (opencv4 -> opencv5 -> opencv -> cmake), issue #2
 source /src/helpers/opencv-flex.sh
 patch_opencv_flex "$SIGFM"
-echo ">>> Patches applied (doctest optional + OpenCV resilient)"
+# Scan-cancellation fix (upstream 256ad3d) — build-test it like install.sh does
+source /src/helpers/scan-cancel-patch.sh
+if ! apply_scan_cancel_patch /tmp/b /src/patches/cs9711-scan-cancel-cleanup.patch; then
+    echo "!!! scan-cancellation patch does not apply to this fork checkout"
+    exit 4
+fi
+echo ">>> Patches applied (doctest optional + OpenCV resilient + scan-cancel: $SCAN_CANCEL_STATUS)"
 
 echo ">>> meson setup..."
 meson setup builddir \

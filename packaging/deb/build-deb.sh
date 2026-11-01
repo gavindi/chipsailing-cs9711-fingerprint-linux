@@ -49,6 +49,11 @@ CS9711_FILE="$DRIVER_DIR/libfprint/drivers/cs9711/cs9711.c"
 if ! grep -q "CS9711_DEFAULT_RESET_SLEEP  1500" "$CS9711_FILE"; then
     sed -i 's/#define CS9711_DEFAULT_RESET_SLEEP.*/#define CS9711_DEFAULT_RESET_SLEEP  1500/' "$CS9711_FILE"
 fi
+# Scan-cancellation fix from upstream's testing branch (256ad3d) — non-fatal
+source "$PROJECT_DIR/helpers/scan-cancel-patch.sh"
+if ! apply_scan_cancel_patch "$DRIVER_DIR" "$PROJECT_DIR/patches/cs9711-scan-cancel-cleanup.patch"; then
+    echo "  WARNING: scan-cancellation fix (upstream 256ad3d) no longer applies — building without it"
+fi
 
 # Make doctest optional (only needed for tests, not the driver)
 SIGFM_MESON="$DRIVER_DIR/libfprint/sigfm/meson.build"

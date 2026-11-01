@@ -7,6 +7,11 @@ Versioning follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
 
+## [Unreleased]
+
+### Added
+- `patches/cs9711-scan-cancel-cleanup.patch` — upstream driver commit `256ad3d` ("Fix CS9711 scan cancellation cleanup", 2026-09-20), which is so far only on archeYR's `cs9711-rebase-testing` branch. A cancelled scan now completes the scan state machine instead of failing it as a read error, deactivation waits for an in-flight scan, and the post-scan command is sent only if a scan started. `install.sh`, `reinstall.sh` (and so the GUI's Rebuild), `build-deb.sh`, the PKGBUILD and the RPM spec all apply it after the retry-delay patch; `scripts/build-in-container.sh` applies it too and fails if it no longer applies, so the distro build matrix catches drift. Shared logic is in `helpers/scan-cancel-patch.sh` (PKGBUILD and spec carry inline copies). Idempotent and non-fatal: `cs9711_scan_error_action` is the done-marker, so reruns and an upstream merge are no-ops, and a patch that stops applying is warned about rather than aborting the install.
+
 ## [2.2.5] - 2026-08-08
 
 **Fedora, measured for the first time on real (virtual) hardware — two silent-failure modes fixed.**

@@ -39,6 +39,16 @@ fi
 cd libfprint-CS9711
 sed -i 's/#define CS9711_DEFAULT_RESET_SLEEP.*/#define CS9711_DEFAULT_RESET_SLEEP  1500/' \
     libfprint/drivers/cs9711/cs9711.c
+# Scan-cancellation fix from upstream's testing branch (256ad3d) — inline copy
+# of helpers/scan-cancel-patch.sh; the patch ships in Source0. Non-fatal, and a
+# no-op once upstream merges it.
+if grep -q 'cs9711_scan_error_action' libfprint/drivers/cs9711/cs9711.c; then
+    :
+elif git apply --check ../patches/cs9711-scan-cancel-cleanup.patch 2>/dev/null; then
+    git apply ../patches/cs9711-scan-cancel-cleanup.patch
+else
+    echo "WARNING: scan-cancellation fix (upstream 256ad3d) not applied — building without it"
+fi
 # Make doctest optional (only needed for tests)
 sed -i "s/dependency('doctest', required: true)/dependency('doctest', required: false)/" \
     libfprint/sigfm/meson.build
